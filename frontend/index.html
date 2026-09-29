@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incident Learning Agent · Hindsight</title>
+<style>
+:root{
+  --bg:#07090d; --panel:#0e1219; --panel2:#121822; --line:#1e2733; --text:#e6ebf2; --mute:#8391a5;
+  --mem:#8b7bff; --mem2:#22d3ee; --fail:#ff5d6c; --ok:#34d399; --warn:#fbbf24;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+body{background:radial-gradient(1200px 500px at 70% -10%,#1a1440 0%,transparent 60%),var(--bg);color:var(--text);font:14px/1.45 var(--sans);min-height:100vh}
+.wrap{max-width:1320px;margin:0 auto;padding:20px 28px 60px}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--mem),var(--mem2));display:grid;place-items:center;font:700 15px var(--mono);color:#07090d}
+.brand h1{font-size:16px;letter-spacing:.2px}
+.brand small{display:block;color:var(--mute);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font:600 12px var(--mono);letter-spacing:.5px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.pill.live{color:var(--ok);border-color:#1d5c46}.pill.live .dot{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.pill.fake{color:var(--warn);border-color:#6b5316}.pill.fake .dot{background:var(--warn)}
+.pill.err{color:var(--fail);border-color:#6b2530}.pill.err .dot{background:var(--fail)}
+
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+button{font:600 13px var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line);padding:10px 14px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+button:hover:not(:disabled){border-color:#3a4a60;transform:translateY(-1px)}
+button:disabled{opacity:.5;cursor:wait}
+button .n{font:700 11px var(--mono);background:#1b2431;border-radius:6px;padding:2px 6px;color:var(--mute)}
+button.primary{background:linear-gradient(135deg,#5b47ff,#1aa6c7);border-color:transparent;color:#fff;margin-left:auto}
+button.primary .n{background:#ffffff33;color:#fff}
+.seedstate{font:12px var(--mono);color:var(--mute)}
+.seedstate.ok{color:var(--ok)}
+
+.incident{display:grid;grid-template-columns:auto 1fr auto;gap:28px;align-items:center;padding:20px 24px;background:linear-gradient(180deg,#131a26,var(--panel));border:1px solid var(--line);border-left:3px solid var(--fail);border-radius:14px;margin-bottom:16px}
+.lat b{display:block;font:700 44px/1 var(--mono);color:var(--fail)}
+.lat span,.dep span{font:600 10px var(--mono);letter-spacing:1.2px;color:var(--mute);text-transform:uppercase}
+.dep b{display:block;font:700 22px var(--mono);margin-top:4px}
+.incident h2{font-size:18px;margin:2px 0 8px}
+.tag{font:700 10px var(--mono);letter-spacing:1px;color:var(--fail);background:#ff5d6c1a;border:1px solid #ff5d6c40;padding:3px 8px;border-radius:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font:12px var(--mono);color:#c3cede;background:#182130;border:1px solid var(--line);padding:4px 9px;border-radius:7px}
+
+.why{position:relative;padding:22px 26px;border-radius:16px;margin-bottom:16px;border:1px solid #3b3480;background:linear-gradient(135deg,#1b1650 0%,#0f2a3a 100%);box-shadow:0 0 60px #6d5cff22}
+.why.idle{background:var(--panel);border:1px dashed var(--line);box-shadow:none}
+.why .k{font:700 11px var(--mono);letter-spacing:1.6px;color:var(--mem2);margin-bottom:8px}
+.why.idle .k{color:var(--mute)}
+.why h3{font-size:21px;line-height:1.35;font-weight:650;max-width:1100px}
+.why h3 em{font-style:normal;color:var(--fail)}.why h3 strong{color:var(--ok);font-weight:650}.why h3 u{text-decoration:none;color:#b9b0ff}
+.why .sub{margin-top:12px;color:#aebbd0;font-size:13px}
+.shift{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px;font:12px var(--mono)}
+.shift .a{color:var(--warn);text-decoration:line-through;text-decoration-color:#fbbf2466}.shift .b{color:var(--ok)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;min-height:120px}
+.card.on{border-color:#3b3480;box-shadow:0 0 40px #6d5cff14}
+.card.off{border-color:#3a3320}
+.ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.badge{font:700 11px var(--mono);letter-spacing:1.2px;padding:4px 9px;border-radius:6px}
+.badge.off{color:var(--warn);background:#fbbf2416;border:1px solid #fbbf2440}
+.badge.on{color:#b9b0ff;background:#8b7bff1c;border:1px solid #8b7bff55}
+.hyp{color:var(--mute);font-size:12.5px;margin:6px 0 12px}.hyp b{color:var(--text);font-weight:600}
+ol{list-style:none;padding:0;display:grid;gap:8px}
+.step{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:11px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line)}
+.step .no{font:700 12px var(--mono);color:var(--mute);width:24px;height:24px;border-radius:7px;background:#19212d;display:grid;place-items:center}
+.step.mem{background:linear-gradient(90deg,#8b7bff1f,#22d3ee0d);border-color:#5a4fd0}
+.step.mem .no{background:var(--mem);color:#0a0a14}
+.step.demoted{background:#ff5d6c10;border-color:#ff5d6c44}
+.step.demoted .t{color:#b9a4a8;text-decoration:line-through;text-decoration-color:#ff5d6c88}
+.step .t{font-weight:550}
+.step .r{margin-top:5px;font-size:12px;color:#aebbd0}
+.tagm{display:inline-block;font:700 9.5px var(--mono);letter-spacing:1px;padding:2px 6px;border-radius:5px;margin-right:6px;vertical-align:1px;background:var(--mem);color:#0a0a14}
+.tagd{background:var(--fail);color:#1a0509}
+.cite{font:700 11.5px var(--mono);color:var(--mem2);background:#22d3ee14;border:1px solid #22d3ee44;padding:1px 6px;border-radius:5px}
+.empty{color:var(--mute);font-size:13px;padding:22px 6px;text-align:center;border:1px dashed var(--line);border-radius:10px}
+
+.fact{display:grid;grid-template-columns:104px 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--line);align-items:start}
+.fact:first-of-type{border-top:0}
+.lbl{font:700 10px var(--mono);letter-spacing:1px;padding:4px 7px;border-radius:6px;text-align:center}
+.l-fail{color:var(--fail);background:#ff5d6c18;border:1px solid #ff5d6c44}
+.l-root{color:var(--warn);background:#fbbf2414;border:1px solid #fbbf2444}
+.l-ok{color:var(--ok);background:#34d39914;border:1px solid #34d39944}
+.l-ctx{color:var(--mute);background:#ffffff08;border:1px solid var(--line)}
+.fact .tx{font-size:13.5px}.fact .id{font:11px var(--mono);color:var(--mute);margin-top:3px}
+.act{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:10px;margin-bottom:8px;border:1px solid var(--line);background:var(--panel2)}
+.act.F{border-left:3px solid var(--fail)}.act.S{border-left:3px solid var(--ok)}
+.act .lbl{flex:none;min-width:92px}
+.foot{color:var(--mute);font:11.5px var(--mono);margin-top:22px;text-align:center}
+#toast{position:fixed;bottom:20px;right:20px;background:#3a1119;border:1px solid var(--fail);color:#ffd7db;padding:12px 16px;border-radius:10px;display:none;max-width:420px;font-size:13px}
+@media (max-width:980px){.grid2{grid-template-columns:1fr}.incident{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><div class="logo">IL</div><div><h1>Incident Learning Agent</h1><small>Past incident → Hindsight memory → future incident → changed investigation</small></div></div>
+    <div id="status" class="pill"><span class="dot"></span><span id="statusText">CONNECTING…</span></div>
+  </header>
+
+  <div class="controls">
+    <button id="bSeed"><span class="n">1</span>Seed historical incident</button>
+    <button id="bOff"><span class="n">2</span>Investigate · Memory OFF</button>
+    <button id="bOn"><span class="n">3</span>Investigate · Memory ON</button>
+    <span id="seedState" class="seedstate">no incident retained yet</span>
+    <button id="bCmp" class="primary"><span class="n">4</span>Compare</button>
+  </div>
+
+  <section class="incident" id="incident"></section>
+
+  <section id="why" class="why idle">
+    <div class="k">WHY THE PLAN CHANGED</div>
+    <h3>Seed INC-1041, then hit Compare — watch Hindsight change the investigation.</h3>
+  </section>
+
+  <div class="grid2">
+    <section class="card off"><div class="ch"><span class="badge off">MEMORY OFF · generic</span></div><div id="offBody"><div class="empty">Run “Investigate · Memory OFF”.</div></div></section>
+    <section class="card on"><div class="ch"><span class="badge on">MEMORY ON · Hindsight</span></div><div id="onBody"><div class="empty">Run “Investigate · Memory ON”.</div></div></section>
+  </div>
+
+  <div class="grid2">
+    <section class="card"><div class="ch"><span class="badge on">HINDSIGHT MEMORY · recalled evidence</span><span id="factCount" class="seedstate"></span></div><div id="facts"><div class="empty">Nothing recalled yet.</div></div></section>
+    <section class="card"><div class="ch"><span class="badge on">HISTORICAL ACTIONS</span></div><div id="acts"><div class="empty">Nothing recalled yet.</div></div></section>
+  </div>
+  <div class="foot">All panels render live API responses · no mocked memory in the UI</div>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cites = s => esc(s).replace(/INC-\d+/g, m => `<span class="cite">${m}</span>`);
+const S = {off:null, on:null, seeded:false};
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if (!r.ok) throw new Error(`${r.status} on ${path}`);
+  return r.json();
+}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",5000)}
+function setStatus(backend){
+  const el=$("#status"), tx=$("#statusText");
+  if(backend==="hindsight"){el.className="pill live";tx.textContent="HINDSIGHT · LIVE"}
+  else if(backend==="fake"){el.className="pill fake";tx.textContent="FAKE MEMORY · LOCAL DEV"}
+  else {el.className="pill err";tx.textContent="BACKEND UNREACHABLE"}
+}
+async function busy(fn){
+  const bs=[...document.querySelectorAll("button")]; bs.forEach(b=>b.disabled=true);
+  try{await fn()}catch(e){toast("Request failed: "+e.message)}finally{bs.forEach(b=>b.disabled=false)}
+}
+
+function renderIncident(i){
+  $("#incident").innerHTML = `
+    <div class="lat"><span>Checkout latency</span><b>${esc(i.latency_s)}s</b></div>
+    <div><span class="tag">ACTIVE · ${esc(i.id)}</span><h2>${esc(i.title)}</h2>
+      <div style="color:var(--mute)">${esc(i.symptom)}</div>
+      <div class="chips">${i.signals.map(s=>`<span class="chip">${esc(s)}</span>`).join("")}</div></div>
+    <div class="dep"><span>Recent deployment</span><b>${esc(i.deploy_version)}</b></div>`;
+}
+
+function renderPlan(el, inv){
+  if(!inv){return}
+  el.innerHTML = `<div class="hyp">Hypothesis: <b>${cites(inv.hypothesis)}</b></div><ol>${inv.steps.map(s=>{
+    const cls = s.deprioritized ? "demoted" : s.source==="memory" ? "mem" : "";
+    const tag = s.deprioritized ? `<span class="tagm tagd">DEMOTED</span>` : s.source==="memory" ? `<span class="tagm">FROM MEMORY</span>` : "";
+    const txt = s.deprioritized ? s.text.replace(/ — DEPRIORITIZED$/,"") : s.text;
+    return `<li class="step ${cls}"><div class="no">${s.order}</div><div><div class="t">${tag}${esc(txt)}</div>${s.rationale?`<div class="r">↳ ${cites(s.rationale)}</div>`:""}</div></li>`}).join("")}</ol>`;
+}
+
+function label(t){
+  if(/fail|did not|no improvement/i.test(t)) return ["l-fail","FAILED ACTION"];
+  if(/root cause|actual cause/i.test(t)) return ["l-root","ROOT CAUSE"];
+  if(/roll(ed)? ?back|rollback|revert/i.test(t)) return ["l-ok","MITIGATION"];
+  return ["l-ctx","CONTEXT"];
+}
+function renderMemory(inv){
+  const ev = inv ? inv.evidence : [];
+  $("#factCount").textContent = ev.length ? `${ev.length} facts recalled` : "";
+  $("#facts").innerHTML = ev.length ? ev.map(m=>{const [c,l]=label(m.text);
+    return `<div class="fact"><span class="lbl ${c}">${l}</span><div><div class="tx">${cites(m.text)}</div><div class="id">${esc(m.document_id||"")} · memory ${esc(m.id)}${m.type?" · "+esc(m.type):""}</div></div></div>`}).join("")
+    : `<div class="empty">${S.on ? "Hindsight recalled nothing relevant — seed INC-1041 first." : "Nothing recalled yet."}</div>`;
+  const ha = inv ? inv.historical_actions : [];
+  $("#acts").innerHTML = ha.length ? ha.map(a=>`<div class="act ${a.outcome==="FAILED"?"F":"S"}"><span class="lbl ${a.outcome==="FAILED"?"l-fail":"l-ok"}">${esc(a.outcome)}</span><div>${cites(a.text)}</div></div>`).join("")
+    : `<div class="empty">No prior failed/successful actions recalled.</div>`;
+}
+
+function renderWhy(){
+  const on=S.on, off=S.off, el=$("#why");
+  if(!on){el.className="why idle";return}
+  const used = on.steps.length && on.steps[0].source==="memory";
+  if(!used){
+    el.className="why idle";
+    el.innerHTML=`<div class="k">WHY THE PLAN CHANGED</div><h3>No relevant memory recalled — the plan is identical to the generic baseline.</h3><div class="sub">${esc(on.why_changed)}</div>`;
+    return;
+  }
+  el.className="why";
+  const shift = off ? `<div class="shift"><span>FIRST STEP</span><span class="a">${esc(off.steps[0].text)}</span><span>→</span><span class="b">${esc(on.steps[0].text)}</span></div>` : "";
+  el.innerHTML=`<div class="k">WHY THE PLAN CHANGED · EVIDENCE ${cites(on.historical_actions[0]?.incident_id||"")}</div>
+    <h3>The agent changed its investigation because <u>Hindsight</u> recalled a previous incident with similar symptoms where <em>database scaling failed</em> and <strong>connection-pool rollback resolved the issue</strong>.</h3>
+    ${shift}<div class="sub">${cites(on.why_changed)}</div>`;
+}
+
+function renderAll(){
+  renderPlan($("#offBody"), S.off); renderPlan($("#onBody"), S.on);
+  renderMemory(S.on); renderWhy();
+}
+
+$("#bSeed").onclick = () => busy(async()=>{
+  const r = await api("/api/seed", {}); S.seeded=true; setStatus(r.memory_backend);
+  const el=$("#seedState"); el.className="seedstate ok"; el.textContent=`✓ ${r.retained} retained in ${r.memory_backend==="hindsight"?"Hindsight":"fake memory"}`;
+});
+$("#bOff").onclick = () => busy(async()=>{S.off = await api("/api/investigate",{memory:false}); setStatus(S.off.memory_backend); renderAll()});
+$("#bOn").onclick  = () => busy(async()=>{S.on  = await api("/api/investigate",{memory:true});  setStatus(S.on.memory_backend);  renderAll()});
+$("#bCmp").onclick = () => busy(async()=>{const c = await api("/api/compare",{}); S.off=c.off; S.on=c.on; setStatus(c.on.memory_backend); renderAll()});
+
+(async()=>{
+  try{ const h=await api("/api/health"); setStatus(h.memory_backend);
+       const sc=await api("/api/scenario"); renderIncident(sc.new_incident); }
+  catch(e){ setStatus(null); toast("Cannot reach backend: "+e.message) }
+})();
+</script>
+</body>
+</html>
