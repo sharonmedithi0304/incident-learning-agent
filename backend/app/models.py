@@ -48,6 +48,7 @@ class Step(BaseModel):
     source: Literal["generic", "memory"]
     rationale: str = ""
     deprioritized: bool = False
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class HistoricalAction(BaseModel):

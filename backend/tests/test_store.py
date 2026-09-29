@@ -73,3 +73,8 @@ def test_live_hindsight_roundtrip():
     s.ensure_bank()
     s.retain_incident(INC_1041)
     assert isinstance(s.recall("checkout latency after deploy connection pool"), list)
+
+
+def test_fake_healthcheck_is_healthy():
+    s = HindsightStore(FakeHindsight(), "b", "fake")
+    assert s.healthcheck() is True

@@ -1,47 +1,106 @@
-"""Classify recalled memories. Wording from a real Hindsight server may be paraphrased,
-so we match on meaning-bearing keywords, not exact strings."""
+"""Extract reusable operational experience from recalled Hindsight memories.
+
+This module intentionally avoids incident-specific/domain-specific rules. It looks for
+generic evidence patterns (failed actions, successful mitigations, and root-cause
+statements) in whatever text Hindsight returns.
+"""
 import re
 from dataclasses import dataclass, field
 
 from .models import HistoricalAction, Memory
 
-_FAIL = re.compile(r"\b(fail\w*|did not|didn't|no improvement|ineffective|unsuccessful)\b", re.I)
-_SCALE = re.compile(r"\b(scal\w*|capacity)\b", re.I)
-_POOL = re.compile(r"connection[- ]pool", re.I)
-_FIX = re.compile(r"\b(roll(ed)? ?back|rollback|revert\w*)\b", re.I)
-_ROOT = re.compile(r"\b(root cause|actual cause|exhaust\w*)\b", re.I)
-
+_FAILED = re.compile(
+    r"\b(fail(?:ed|ure|s|ing)?|did not|didn't|no improvement|ineffective|unsuccessful|"
+    r"not mitigate|not resolve|didn't help)\b", re.I
+)
+_SUCCESS = re.compile(r"\b(success(?:ful|fully)?|worked|resolved|restored|mitigated|fixed|effective)\b", re.I)
+_ROOT = re.compile(r"\b(root cause|actual cause|underlying cause|caused by)\b", re.I)
+_MITIGATION = re.compile(
+    r"\b(mitigation|mitigated|resolved|restored|fixed|worked|rollback|rolled back|revert(?:ed)?|reverted)\b",
+    re.I,
+)
 
 @dataclass
 class Insight:
-    failed_scaling: list[Memory] = field(default_factory=list)
-    pool_mitigation: list[Memory] = field(default_factory=list)
-    pool_root_cause: list[Memory] = field(default_factory=list)
+    failed_actions: list[Memory] = field(default_factory=list)
+    successful_mitigations: list[Memory] = field(default_factory=list)
+    root_causes: list[Memory] = field(default_factory=list)
 
     @property
-    def has_pool_lesson(self) -> bool:
-        return bool(self.pool_mitigation or self.pool_root_cause)
-
+    def has_any_lesson(self) -> bool:
+        return bool(self.failed_actions or self.successful_mitigations or self.root_causes)
 
 def analyze(memories: list[Memory]) -> Insight:
     ins = Insight()
     for m in memories:
-        t = m.text
-        if _SCALE.search(t) and _FAIL.search(t):
-            ins.failed_scaling.append(m)
-        if _POOL.search(t) and _FIX.search(t):
-            ins.pool_mitigation.append(m)
-        if _POOL.search(t) and _ROOT.search(t):
-            ins.pool_root_cause.append(m)
+        text = m.text or ""
+        if _FAILED.search(text):
+            ins.failed_actions.append(m)
+        if _SUCCESS.search(text) and _MITIGATION.search(text):
+            ins.successful_mitigations.append(m)
+        if _ROOT.search(text):
+            ins.root_causes.append(m)
     return ins
 
+def _extract_after(text: str, patterns: list[str]) -> str:
+    for pattern in patterns:
+        m = re.search(pattern, text, re.I)
+        if m:
+            value = text[m.end():].strip(" :.-'\"")
+            if value:
+                return value.rstrip(".")
+    return text.strip()
+
+def summarize_root_cause(memory: Memory) -> str:
+    return _extract_after(
+        memory.text or "",
+        [
+            r"\b(?:root cause|actual cause|underlying cause)\b[^.]{0,100}?\bwas\b",
+            r"\bcaused by\b",
+        ],
+    )
+
+def summarize_mitigation(memory: Memory) -> str:
+    return _extract_after(
+        memory.text or "",
+        [
+            r"\bsuccessful mitigation\b[^.]{0,100}?\bwas to\b",
+            r"\b(?:mitigated|resolved|fixed|restored)\b\s+(?:by|when|after)\b",
+            r"\b(?:rollback|revert(?:ed)?)\b",
+        ],
+    )
+
+def summarize_failed_action(memory: Memory) -> str:
+    text = memory.text or ""
+    quoted = re.search(r"\baction\s+['\"]([^'\"]+)['\"]\s+failed\b", text, re.I)
+    if quoted:
+        return quoted.group(1).strip()
+    attempt = re.search(r"\battempt(?:ed)?\s+to\s+(.+?)\s+(?:failed|did not|didn't)\b", text, re.I)
+    if attempt:
+        return attempt.group(1).strip(" .")
+    return text.strip()
 
 def historical_actions(ins: Insight) -> list[HistoricalAction]:
-    out, seen = [], set()
-    for m in ins.failed_scaling:
-        out.append(HistoricalAction(incident_id=m.document_id, description=m.text, outcome="FAILED", memory_id=m.id))
+    out: list[HistoricalAction] = []
+    seen: set[str] = set()
+    for m in ins.failed_actions:
+        if m.id in seen:
+            continue
+        out.append(HistoricalAction(
+            incident_id=m.document_id,
+            description=summarize_failed_action(m),
+            outcome="FAILED",
+            memory_id=m.id,
+        ))
         seen.add(m.id)
-    for m in ins.pool_mitigation:
-        if m.id not in seen:
-            out.append(HistoricalAction(incident_id=m.document_id, description=m.text, outcome="SUCCESSFUL", memory_id=m.id))
+    for m in ins.successful_mitigations:
+        if m.id in seen:
+            continue
+        out.append(HistoricalAction(
+            incident_id=m.document_id,
+            description=summarize_mitigation(m),
+            outcome="SUCCESSFUL",
+            memory_id=m.id,
+        ))
+        seen.add(m.id)
     return out

@@ -33,3 +33,16 @@ def test_investigate_memory_flag(client):
     off = client.post("/api/investigate", json={"memory": False}).json()
     on = client.post("/api/investigate", json={"memory": True}).json()
     assert off["evidence"] == [] and on["evidence"]
+
+
+def test_investigate_returns_502_when_memory_backend_fails(client):
+    class BrokenStore:
+        backend = "hindsight"
+        def recall(self, query):
+            raise RuntimeError("network down")
+    app.dependency_overrides[get_store] = lambda: BrokenStore()
+    try:
+        r = client.post("/api/investigate", json={"memory": True})
+        assert r.status_code == 502
+    finally:
+        app.dependency_overrides.clear()

@@ -172,14 +172,14 @@ function renderPlan(el, inv){
 function label(t){
   if(/fail|did not|no improvement/i.test(t)) return ["l-fail","FAILED ACTION"];
   if(/root cause|actual cause/i.test(t)) return ["l-root","ROOT CAUSE"];
-  if(/roll(ed)? ?back|rollback|revert/i.test(t)) return ["l-ok","MITIGATION"];
+  if(/roll(ed)? ?back|rollback|revert/i.test(t)) return ["l-ok","SUCCESSFUL MITIGATION"];
   return ["l-ctx","CONTEXT"];
 }
 function renderMemory(inv){
   const ev = inv ? inv.evidence : [];
   $("#factCount").textContent = ev.length ? `${ev.length} facts recalled` : "";
   $("#facts").innerHTML = ev.length ? ev.map(m=>{const [c,l]=label(m.text);
-    return `<div class="fact"><span class="lbl ${c}">${l}</span><div><div class="tx">${cites(m.text)}</div><div class="id">${esc(m.document_id||"")} · memory ${esc(m.id)}${m.type?" · "+esc(m.type):""}</div></div></div>`}).join("")
+    return `<div class="fact"><span class="lbl ${c}">${l}</span><div><div class="tx">${cites(m.text)}</div><div class="id">${esc(m.document_id||"historical incident")}${m.type?" · "+esc(m.type):""}</div></div></div>`}).join("")
     : `<div class="empty">${S.on ? "Hindsight recalled nothing relevant — seed INC-1041 first." : "Nothing recalled yet."}</div>`;
   const ha = inv ? inv.historical_actions : [];
   $("#acts").innerHTML = ha.length ? ha.map(a=>`<div class="act ${a.outcome==="FAILED"?"F":"S"}"><span class="lbl ${a.outcome==="FAILED"?"l-fail":"l-ok"}">${esc(a.outcome)}</span><div>${cites(a.text)}</div></div>`).join("")
@@ -196,9 +196,9 @@ function renderWhy(){
     return;
   }
   el.className="why";
-  const shift = off ? `<div class="shift"><span>FIRST STEP</span><span class="a">${esc(off.steps[0].text)}</span><span>→</span><span class="b">${esc(on.steps[0].text)}</span></div>` : "";
-  el.innerHTML=`<div class="k">WHY THE PLAN CHANGED · EVIDENCE ${cites(on.historical_actions[0]?.incident_id||"")}</div>
-    <h3>The agent changed its investigation because <u>Hindsight</u> recalled a previous incident with similar symptoms where <em>database scaling failed</em> and <strong>connection-pool rollback resolved the issue</strong>.</h3>
+  const shift = off && on.steps.length ? `<div class="shift"><span>FIRST STEP</span><span class="a">${esc(off.steps[0].text)}</span><span>→</span><span class="b">${esc(on.steps[0].text)}</span></div>` : "";
+  el.innerHTML=`<div class="k">WHY THE PLAN CHANGED · EVIDENCE</div>
+    <h3>Hindsight recalled prior incident experience and used it to change the investigation priorities.</h3>
     ${shift}<div class="sub">${cites(on.why_changed)}</div>`;
 }
 

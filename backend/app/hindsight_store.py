@@ -24,7 +24,10 @@ def incident_to_narrative(inc: Incident) -> str:
         s.append(f"In {inc.id} the initial hypothesis for the {inc.service} latency was {inc.initial_hypothesis}.")
     for a in inc.actions:
         note = f" — {a.note.rstrip('.')}" if a.note else ""
-        s.append(f"In {inc.id} the action '{a.description}' {a.outcome}{note}.")
+        s.append(
+            f"In {inc.id}, during {inc.service} latency investigation, the action "
+            f"'{a.description}' {a.outcome}{note}."
+        )
     if inc.root_cause:
         s.append(f"The actual root cause of {inc.id} {inc.service} latency was {inc.root_cause}.")
     if inc.successful_mitigation:
@@ -50,9 +53,27 @@ class HindsightStore:
 
     def ensure_bank(self) -> None:
         try:
-            self.client.create_bank(bank_id=self.bank_id, name="Incident Learning Agent", mission=BANK_MISSION)
-        except Exception as e:  # bank may already exist / be managed elsewhere
-            log.warning("create_bank skipped: %s", type(e).__name__)
+            self.client.create_bank(
+                bank_id=self.bank_id,
+                name="Incident Learning Agent",
+                mission=BANK_MISSION,
+            )
+        except Exception as e:
+            # Hindsight Cloud may report an existing/managed bank as an error.
+            # Keep startup permissive, but surface the real connectivity state
+            # through healthcheck() rather than pretending configuration is live.
+            log.info("create_bank skipped: %s", type(e).__name__)
+
+    def healthcheck(self) -> bool:
+        if self.backend == "fake":
+            return True
+        self.client.recall(
+            bank_id=self.bank_id,
+            query="incident learning agent health check",
+            max_tokens=128,
+            budget="low",
+        )
+        return True
 
     def retain_incident(self, inc: Incident) -> str:
         content = incident_to_narrative(inc)
