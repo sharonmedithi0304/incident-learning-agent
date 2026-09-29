@@ -30,8 +30,16 @@ def _incident_tokens(inc: NewIncident) -> set[str]:
 def _relevance(inc: NewIncident, memory: Memory) -> int:
     return len(_incident_tokens(inc) & _tokens(memory.text or ""))
 
+def _source_label(memory: Memory) -> str:
+    if memory.document_id:
+        return memory.document_id
+    ids = re.findall(r"\bINC-\d+\b", memory.text or "")
+    if ids:
+        return ids[0]
+    return "historical evidence"
+
 def _cite(ms: list[Memory]) -> str:
-    return ", ".join(sorted({m.document_id or m.id for m in ms}))
+    return ", ".join(sorted({_source_label(m) for m in ms}))
 
 def _steps(specs: list[tuple]) -> list[Step]:
     return [
@@ -78,8 +86,14 @@ def _build_memory_specs(inc: NewIncident, memories: list[Memory]):
     matched_failed_ids: set[str] = set()
     reasons: list[str] = []
 
+    seen_causes: set[str] = set()
+    seen_mitigations: set[str] = set()
     for m in insight.root_causes:
         cause = summarize_root_cause(m)
+        cause_key = re.sub(r"\s+", " ", cause.lower()).strip(" .")
+        if cause_key in seen_causes:
+            continue
+        seen_causes.add(cause_key)
         src = _cite([m])
         specs.append((
             f"Test the recalled root-cause hypothesis on {inc.service}: {cause}",
@@ -92,6 +106,10 @@ def _build_memory_specs(inc: NewIncident, memories: list[Memory]):
 
     for m in insight.successful_mitigations:
         mitigation = summarize_mitigation(m)
+        mitigation_key = re.sub(r"\s+", " ", mitigation.lower()).strip(" .")
+        if mitigation_key in seen_mitigations:
+            continue
+        seen_mitigations.add(mitigation_key)
         src = _cite([m])
         specs.append((
             f"If that hypothesis is confirmed, prepare the mitigation that worked before: {mitigation}",
@@ -102,7 +120,16 @@ def _build_memory_specs(inc: NewIncident, memories: list[Memory]):
         ))
         reasons.append(f"successful prior mitigation: {mitigation} ({src})")
 
-    failed_descriptions = [(m, summarize_failed_action(m)) for m in insight.failed_actions]
+    failed_descriptions = []
+    seen_failed: set[str] = set()
+    for m in insight.failed_actions:
+        action = summarize_failed_action(m)
+        key = re.sub(r"\bincreasing\b", "increase", action.lower())
+        key = re.sub(r"\s+", " ", key).strip(" .:-")
+        if key in seen_failed:
+            continue
+        seen_failed.add(key)
+        failed_descriptions.append((m, action))
     demoted = []
     for key in ("deploy", "db", "scale", "logs", "deps"):
         text = GENERIC[key]
@@ -137,9 +164,10 @@ def _build_memory_specs(inc: NewIncident, memories: list[Memory]):
     for _, action, src in demoted:
         reasons.append(f"deprioritized failed action: {action} ({src})")
 
+    unique_reasons = list(dict.fromkeys(reasons))[:6]
     why = (
         f"Hindsight recalled {len(memories)} relevant memories. "
-        + ("; ".join(reasons) if reasons else "No reusable prior experience was extracted.")
+        + ("; ".join(unique_reasons) if unique_reasons else "No reusable prior experience was extracted.")
         + ". Historical evidence is unconfirmed for the current incident. "
         + "Current-incident evidence has not confirmed these historical lessons, "
         "so memory changes investigation priorities but does not declare the current root cause proven."
